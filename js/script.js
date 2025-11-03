@@ -1,20 +1,20 @@
 document.addEventListener('DOMContentLoaded', function () {
-    if (!window.userData) {
-        return;
-    }
+    if (!window.userData) return;
     const user = window.userData;
+    
+    // --- Prevent popup from showing again during same session ---
+if (sessionStorage.getItem('welcomeModalShown') === '1') {
+    return;
+}
 
-    // ✅ Only show for new users who agreed to policy
-    if (localStorage.getItem('welcomePopupDismissed') === 'true') {
-        return;
-    }
-   
-    if (user.policyagreed !== 1) {
-        return;
-    }
-    if (!(user.firstaccess === 0 || user.firstaccess === user.lastaccess)) {
-        return;}
+    // ✅ Only show if policy agreed and not dismissed
+    if (user.dismissed === 1) return;
+ // If site has a policy, only show popup when agreed.
+// If no policy exists, allow popup normally.
+if (user.policyenabled && user.policyagreed !== 1) return;
 
+
+       sessionStorage.setItem('welcomeModalShown', '1');
     // --- Styles ---
     const style = document.createElement('style');
     style.textContent = `
@@ -52,6 +52,12 @@ document.addEventListener('DOMContentLoaded', function () {
             color: #111 !important;
         }
 
+        .welcome-modal h3 {
+            margin-bottom: 5px !important;
+            font-size: 18px !important;
+            color: #333 !important;
+        }
+
         .welcome-modal p {
             margin-bottom: 20px !important;
             color: #555 !important;
@@ -66,6 +72,16 @@ document.addEventListener('DOMContentLoaded', function () {
             border-radius: 8px !important;
             cursor: pointer !important;
             font-weight: 600 !important;
+            margin: 5px !important;
+        }
+
+        .welcome-modal .dismiss-btn {
+            background: #f3f4f6 !important;
+            color: #374151 !important;
+        }
+
+        .welcome-modal .dismiss-btn:hover {
+            background: #e5e7eb !important;
         }
 
         .welcome-close {
@@ -94,73 +110,127 @@ document.addEventListener('DOMContentLoaded', function () {
     `;
     document.head.appendChild(style);
 
-   // --- Structure ---
-const overlay = document.createElement('div');
-overlay.className = 'welcome-overlay';
-overlay.innerHTML = `
-    <div class="welcome-modal">
-        <button class="welcome-close" aria-label="Close">&times;</button>
-        <h2>Hello!, ${user.fullname} 🎉</h2>
-        <h1>Welcome to Knowx Box !!! </h1>
-        <button class="action" id="continue-btn">Continue</button>
-    </div>
-`;
-document.body.appendChild(overlay);
+    // --- Structure ---
+    const overlay = document.createElement('div');
+    overlay.className = 'welcome-overlay';
+    overlay.innerHTML = `
+        <div class="welcome-modal">
+            <button class="welcome-close" aria-label="Close">&times;</button>
+            <h2>Hello!, ${user.fullname} 🎉</h2>
+            <h3>Welcome to Knowx Box !!!</h3>
+            <p>Explore our available courses</p>
+            <button class="action" id="continue-btn">Continue Learning</button>
+            <button class="action dismiss-btn" id="dismiss-btn">Don't show again</button>
+        </div>
+    `;
+    document.body.appendChild(overlay);
 
-// --- Close behavior ---
-const dismissPopup = () => {
-    overlay.remove();
-    localStorage.setItem('welcomePopupDismissed', 'true'); // never show again
-};
+    // --- Close behavior (just remove, no dismiss) ---
+    const closePopup = () => {
+        overlay.remove();
+    };
 
-// --- Continue behavior (change tab or redirect) ---
-// --- Continue behavior (change tab or redirect) ---
-const handleContinue = () => {
-    dismissPopup(); // always remove popup first
+    // --- Dismiss behavior (AJAX + redirect/update to default dashboard) ---
+   // --- Dismiss behavior (AJAX + redirect/update to default dashboard) ---
+const handleDismiss = async () => {
+    try {
+        const response = await fetch(`${window.location.origin}/local/welcome_modal/dismiss.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `userid=${user.id}`
+        });
 
-    const tabName = user.defaultTab || 'inprogress';
-    const origin = window.location.origin;
-    const path = window.location.pathname;
+        if (response.ok) {
+            // ✅ Immediately mark as dismissed for this session
+            user.dismissed = 1;
+            sessionStorage.setItem('welcomePopupClosed', '1');
 
-    // Normalize: treat "/my", "/my/", "/my/index.php" as the same
-    const isDashboard = /^\/my(\/|\/index\.php)?$/.test(path);
+            // ✅ Close popup instantly (no reload delay)
+            overlay.remove();
 
-    if (isDashboard) {
-        // ✅ Already on dashboard → switch tab
-        const tabButton = document.querySelector(`a[href*="mycoursestab=${tabName}"]`);
-        if (tabButton) {
-            tabButton.click();
-        } else {
-            // fallback: open dashboard tab directly
-            window.location.href = `${origin}/my/?mycoursestab=${tabName}`;
-        }
-    } else {
-        // 🚀 Not on dashboard
-        try {
-            const buttonUrl = new URL(user.buttonUrl);
-            const restrictedPaths = ['/admin/policy.php', '/login/change_password.php'];
-            if (restrictedPaths.includes(buttonUrl.pathname)) {
-                // fallback to dashboard safely
-                window.location.href = `${origin}/my/?mycoursestab=${tabName}`;
+            // ✅ Redirect to dashboard (safe, no /my/my loop)
+            const origin = window.location.origin;
+            const tabName = user.defaultTab || 'inprogress';
+            const dashboardUrl = `${origin}/my/?mycoursestab=${tabName}&page=1&sort=coursefullname&dir=ASC&view=card`;
+            const currentPath = window.location.pathname;
+
+            // If already on dashboard, just update params
+            if (currentPath === '/my/' || currentPath === '/my') {
+                const url = new URL(window.location);
+                url.searchParams.set('mycoursestab', tabName);
+                url.searchParams.set('page', '1');
+                url.searchParams.set('sort', 'coursefullname');
+                url.searchParams.set('dir', 'ASC');
+                url.searchParams.set('view', 'card');
+                history.replaceState(null, '', url.toString());
+                // If you want to refresh dashboard widgets uncomment:
+                // window.location.reload();
             } else {
-                window.location.href = user.buttonUrl;
+                // Full redirect if on another page
+                window.location.href = dashboardUrl;
             }
-        } catch (e) {
-            // Fallback if malformed URL
-            window.location.href = `${origin}/my/?mycoursestab=${tabName}`;
+        } else {
+            // Fallback if request fails
+            sessionStorage.setItem('welcomePopupClosed', '1');
+            overlay.remove();
         }
+    } catch (e) {
+        // Fallback in case of error
+        sessionStorage.setItem('welcomePopupClosed', '1');
+        overlay.remove();
     }
 };
 
+    // --- Continue behavior (redirect/update to admin URL) ---
+    const handleContinue = () => {
+        closePopup();  // Remove first
 
-// --- Event bindings ---
-overlay.querySelector('.welcome-close').addEventListener('click', dismissPopup);
-overlay.querySelector('#continue-btn').addEventListener('click', handleContinue);
-overlay.addEventListener('click', e => {
-    if (e.target === overlay) dismissPopup();
-});
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') dismissPopup();
-});
+        try {
+            const buttonUrlObj = new URL(user.buttonUrl);
+            const origin = window.location.origin;
+            const currentPath = window.location.pathname;
 
+            // If buttonUrl is /my/ variant and we're on /my/, update in-place
+            if ((buttonUrlObj.pathname === '/my/' || buttonUrlObj.pathname === '/my') && (currentPath === '/my/' || currentPath === '/my')) {
+                const url = new URL(window.location);
+                // Append all params from buttonUrl
+                buttonUrlObj.searchParams.forEach((value, key) => url.searchParams.set(key, value));
+                history.replaceState(null, '', url.toString());
+                // Optional: If params change view, uncomment below
+                // window.location.reload();
+            } else {
+                // Different page or not on /my/: Full redirect
+                window.location.href = user.buttonUrl;
+            }
+        } catch (e) {
+            // Fallback if malformed URL: Use dashboard
+            const tabName = user.defaultTab || 'inprogress';
+            const fallbackUrl = `${origin}/my/?mycoursestab=${tabName}&page=1&sort=coursefullname&dir=ASC&view=card`;
+            if (window.location.pathname === '/my/' || window.location.pathname === '/my') {
+                // In-place if on /my/
+                const url = new URL(window.location);
+                url.searchParams.set('mycoursestab', tabName);
+                url.searchParams.set('page', '1');
+                url.searchParams.set('sort', 'coursefullname');
+                url.searchParams.set('dir', 'ASC');
+                url.searchParams.set('view', 'card');
+                history.replaceState(null, '', url.toString());
+                // Optional reload
+                // window.location.reload();
+            } else {
+                window.location.href = fallbackUrl;
+            }
+        }
+    };
+
+    // --- Event bindings ---
+    overlay.querySelector('.welcome-close').addEventListener('click', closePopup);
+    overlay.querySelector('#continue-btn').addEventListener('click', handleContinue);
+    overlay.querySelector('#dismiss-btn').addEventListener('click', handleDismiss);
+    overlay.addEventListener('click', e => {
+        if (e.target === overlay) closePopup();
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closePopup();
+    });
 });
