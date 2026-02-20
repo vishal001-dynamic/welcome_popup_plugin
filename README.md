@@ -41,7 +41,7 @@ Save the settings and the plugin is ready to use.
 
 ## Usage
 
-- After a user logs in and visits their dashboard (`/my/`), the welcome modal will appear automatically (provided they have not permanently dismissed it).
+- After a user logs in and visits their dashboard, the welcome modal will appear automatically (provided they have not permanently dismissed it).
 - The modal displays a personalised welcome message, a friendly heading, and a short description.
 - **Go to Library** – takes the user to the configured URL.
 - **Don't show again** – permanently dismisses the modal (stores a record in the database). The user will never see it again, even after logging out and back in.
