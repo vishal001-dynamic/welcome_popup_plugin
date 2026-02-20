@@ -55,7 +55,7 @@ This plugin stores the user ID and a timestamp when a user chooses to permanentl
 
 - **The modal does not appear at all**  
   - Ensure you are logged in as a non‑admin, non‑guest user.  
-  - Check that you are on the dashboard (`/my/`). The modal only loads there.  
+  - Check that you are on the dashboard. The modal only loads there.  
   - If a site policy is enabled, make sure the user has agreed to it.  
   - Verify that the database table `local_welcome_modal_dismissed` exists (it is created during installation).
 
